@@ -1,0 +1,54 @@
+{
+  "name": "dine_restaurant_vue",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "typecheck": "vue-tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:unit": "vitest run tests/unit tests/component",
+    "test:integration": "vitest run tests/integration",
+    "test:report": "vitest run --coverage",
+    "report:open": "vite preview --outDir reports/html"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
+  },
+  "dependencies": {
+    "@quasar/extras": "^2.1.0",
+    "axios": "^1.21.1",
+    "quasar": "^2.35.3",
+    "vue": "^3.5.45"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@quasar/vite-plugin": "^2.0.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/user-event": "^14.6.9",
+    "@testing-library/vue": "^8.1.0",
+    "@types/node": "^26.6.6",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "@vitest/coverage-v8": "^5.1.0",
+    "@vitest/ui": "^5.1.0",
+    "@vue/test-utils": "^2.5.1",
+    "eslint": "^10.14.0",
+    "eslint-plugin-vue": "^10.12.1",
+    "globals": "^17.14.0",
+    "jsdom": "^31.0.0",
+    "msw": "^3.0.5",
+    "sass-embedded": "^1.108.2",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0",
+    "vue-tsc": "^3.3.14"
+  }
+}

@@ -1,0 +1,818 @@
+{
+  "info": {
+    "name": "Dine Restaurant API",
+    "description": "餐廳訂位系統 API。規則編號（BR-xx）對應 `docs/規格書_v1.xlsx` 的 Rules 工作表。\n\n## 使用方式\n1. 匯入本 Collection 與 Environment（Local 或 Production），右上角選擇環境。\n2. 依序執行，或用 Collection Runner 一次跑完：Create reservation 會建立一筆訂位，Admin 資料夾最後會把它刪掉。\n\n## 共通規則\n- 錯誤格式一律為 `{ \"error\": \"代碼\" }`；欄位錯誤另有 `fields`。\n- `401` 一律代表需要重新登入。\n- 網址結尾**不要加 `/`**，例如 `/api/admin/reservations/` 會回 404。\n- 「今天」以台灣時間（UTC+8）計算，可預約明天起 30 天內。\n- **CORS**：只有後端 `CORS_ORIGINS` 設定列出的前端網址能從瀏覽器呼叫，新的前端網址請先請後端加入。Postman 不受 CORS 限制。\n- 後台 API 用 `Authorization: Bearer <token>` 驗證，token 由 Login 取得。\n\n## 自動變數\n- `bookingDate`：每次送出前自動算成 D+3（台灣時間），範例不會因日期過期而失效。\n- `phone`：Create reservation 每次隨機產生，避免重複訂位。\n- `reservationId`：Create reservation 成功後自動記下，給 Delete reservation 使用。\n- `adminToken`：Login 成功後自動記下，Admin 資料夾的請求會自動帶上。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// bookingDate = 台灣時間的 D+3（YYYY-MM-DD）",
+          "const d = new Date(Date.now() + 8 * 3600 * 1000);",
+          "d.setUTCDate(d.getUTCDate() + 3);",
+          "pm.collectionVariables.set('bookingDate', d.toISOString().slice(0, 10));"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "bookingDate",
+      "value": ""
+    },
+    {
+      "key": "phone",
+      "value": "0912345678"
+    },
+    {
+      "key": "reservationId",
+      "value": ""
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Public",
+      "description": "前台 API，不需登入。",
+      "item": [
+        {
+          "name": "Get availability",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('回傳 4 個時段', () => pm.expect(pm.response.json().slots).to.have.lengthOf(4));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/availability?date={{bookingDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "availability"
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "{{bookingDate}}",
+                  "description": "YYYY-MM-DD"
+                }
+              ]
+            },
+            "description": "查詢某一天各時段的剩餘名額（BR-12），以及可預約的日期範圍（BR-04）。\n\n- `range.min` / `range.max`：可預約範圍（台灣時間，明天起 30 天內），前端請用它限制日期選擇器。\n- 這支 API **不檢查日期是否在可預約範圍內**，範圍外的日期也會回傳名額。\n- `remaining <= 0` 代表額滿，請停用該時段並顯示 `Full`。"
+          },
+          "response": [
+            {
+              "name": "200 成功",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/availability?date={{bookingDate}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "availability"
+                  ],
+                  "query": [
+                    {
+                      "key": "date",
+                      "value": "{{bookingDate}}",
+                      "description": "YYYY-MM-DD"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"date\": \"2026-10-26\",\n  \"range\": {\n    \"min\": \"2026-10-24\",\n    \"max\": \"2026-11-22\"\n  },\n  \"maxGuests\": 10,\n  \"slots\": [\n    {\n      \"slot\": \"11:30\",\n      \"remaining\": 20\n    },\n    {\n      \"slot\": \"12:30\",\n      \"remaining\": 5\n    },\n    {\n      \"slot\": \"17:30\",\n      \"remaining\": 0\n    },\n    {\n      \"slot\": \"18:30\",\n      \"remaining\": 20\n    }\n  ]\n}"
+            },
+            {
+              "name": "400 日期格式錯誤",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/availability?date=2026-02-30",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "availability"
+                  ],
+                  "query": [
+                    {
+                      "key": "date",
+                      "value": "2026-02-30"
+                    }
+                  ]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": \"VALIDATION_ERROR\",\n  \"fields\": {\n    \"date\": \"INVALID_DATE\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Create reservation",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 每次產生不同的電話，避免重複執行時撞到 DUPLICATE",
+                  "pm.collectionVariables.set('phone', '09' + String(Math.floor(Math.random() * 1e8)).padStart(8, '0'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) pm.collectionVariables.set('reservationId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/reservations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "reservations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Amy\",\n  \"phone\": \"{{phone}}\",\n  \"date\": \"{{bookingDate}}\",\n  \"slot\": \"12:30\",\n  \"guests\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "建立訂位（BR-01 ~ BR-08）。\n\n| 欄位 | 型別 | 規則 |\n| --- | --- | --- |\n| name | string | 必填 |\n| phone | string | 必填，09 開頭共 10 碼數字 |\n| date | string | 必填，YYYY-MM-DD，明天起 30 天內 |\n| slot | string | 必填，`11:30`、`12:30`、`17:30`、`18:30` 其中之一 |\n| guests | **number** | 必填，1–10 的整數。**送字串 \"2\" 會被當成錯誤** |\n\n`fields` 錯誤代碼：\n\n| 欄位 | 可能的代碼 |\n| --- | --- |\n| name | REQUIRED |\n| phone | REQUIRED、INVALID_PHONE |\n| date | REQUIRED、INVALID_DATE、OUT_OF_RANGE |\n| slot | REQUIRED、INVALID_SLOT |\n| guests | REQUIRED、OUT_OF_RANGE |\n\n代碼要顯示成什麼文字，以規格書「UI 文案」欄為準。"
+          },
+          "response": [
+            {
+              "name": "201 成功",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/reservations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "reservations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Amy\",\n  \"phone\": \"0912345678\",\n  \"date\": \"2026-10-26\",\n  \"slot\": \"12:30\",\n  \"guests\": 2\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": 1,\n  \"name\": \"Amy\",\n  \"phone\": \"0912345678\",\n  \"date\": \"2026-10-26\",\n  \"slot\": \"12:30\",\n  \"guests\": 2\n}"
+            },
+            {
+              "name": "400 欄位錯誤",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/reservations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "reservations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"\",\n  \"phone\": \"0812345678\",\n  \"date\": \"2026-10-26\",\n  \"slot\": \"12:30\",\n  \"guests\": \"2\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": \"VALIDATION_ERROR\",\n  \"fields\": {\n    \"name\": \"REQUIRED\",\n    \"phone\": \"INVALID_PHONE\",\n    \"guests\": \"OUT_OF_RANGE\"\n  }\n}"
+            },
+            {
+              "name": "409 名額不足",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/reservations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "reservations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Amy\",\n  \"phone\": \"0912345678\",\n  \"date\": \"2026-10-26\",\n  \"slot\": \"12:30\",\n  \"guests\": 6\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": \"SLOT_FULL\",\n  \"remaining\": 5\n}"
+            },
+            {
+              "name": "409 重複訂位",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/reservations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "reservations"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Amy\",\n  \"phone\": \"0912345678\",\n  \"date\": \"2026-10-26\",\n  \"slot\": \"12:30\",\n  \"guests\": 2\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": \"DUPLICATE\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "description": "後台 API。先執行 Login，之後的請求會自動帶上 `Authorization: Bearer {{adminToken}}`。",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{adminToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.collectionVariables.set('adminToken', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{adminUser}}\",\n  \"password\": \"{{adminPass}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "後台登入（BR-09）。成功回 `{ token, expiresIn }`。\n\n- **外部前端**：之後的後台請求加上標頭 `Authorization: Bearer <token>`。本 Collection 會自動把 token 存進 `{{adminToken}}` 並帶上。\n- token 有效 8 小時（`expiresIn` 單位為秒），無法提前作廢；登出時請前端自行丟棄 token。\n- 同時也會設定 `admin_session` cookie（`HttpOnly`、`SameSite=Strict`），只給同網域的內建後台頁面使用，跨網站不會送出。\n- 帳號或密碼錯誤一律回 `401`，不區分是哪一項錯。",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "200 成功",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/admin/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin",
+                    "login"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"{{adminUser}}\",\n  \"password\": \"{{adminPass}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Set-Cookie",
+                  "value": "admin_session=<JWT>; Max-Age=28800; Path=/; HttpOnly; Secure; SameSite=Strict"
+                }
+              ],
+              "body": "{\n  \"token\": \"<JWT>\",\n  \"expiresIn\": 28800\n}"
+            },
+            {
+              "name": "401 帳密錯誤",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/admin/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin",
+                    "login"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"wrong\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": \"UNAUTHORIZED\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "List reservations",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('items 是陣列', () => pm.expect(pm.response.json().items).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/reservations?date={{bookingDate}}&q=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "reservations"
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "{{bookingDate}}",
+                  "description": "選填，YYYY-MM-DD"
+                },
+                {
+                  "key": "q",
+                  "value": "",
+                  "description": "選填，部分比對姓名或電話",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "訂位列表（BR-10），需登入。\n\n- `date`、`q` 都是選填，可以一起用；`q` 是部分比對，`0912` 也能找到 `0912345678`。\n- 排序固定為日期 → 時段 → id。\n- `created_at` 是 **UTC 時間**，顯示時請轉成台灣時間（+8）。"
+          },
+          "response": [
+            {
+              "name": "200 成功",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/admin/reservations?date=2026-10-26",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin",
+                    "reservations"
+                  ],
+                  "query": [
+                    {
+                      "key": "date",
+                      "value": "2026-10-26"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"items\": [\n    {\n      \"id\": 1,\n      \"name\": \"Amy\",\n      \"phone\": \"0912345678\",\n      \"date\": \"2026-10-26\",\n      \"slot\": \"12:30\",\n      \"guests\": 2,\n      \"created_at\": \"2026-10-23 08:30:00\"\n    }\n  ]\n}"
+            },
+            {
+              "name": "401 未登入",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/admin/reservations?date={{bookingDate}}&q=",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin",
+                    "reservations"
+                  ],
+                  "query": [
+                    {
+                      "key": "date",
+                      "value": "{{bookingDate}}",
+                      "description": "選填，YYYY-MM-DD"
+                    },
+                    {
+                      "key": "q",
+                      "value": "",
+                      "description": "選填，部分比對姓名或電話",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": \"UNAUTHORIZED\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Delete reservation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/reservations/{{reservationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "reservations",
+                "{{reservationId}}"
+              ]
+            },
+            "description": "刪除訂位（BR-11），需登入。刪除後該時段名額立即釋出。\n\n`{{reservationId}}` 會在執行 Create reservation 成功後自動填入。\n前端請在呼叫前先做二次確認（規格書文案：`Delete this reservation?`）。"
+          },
+          "response": [
+            {
+              "name": "204 成功",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/admin/reservations/{{reservationId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin",
+                    "reservations",
+                    "{{reservationId}}"
+                  ]
+                }
+              },
+              "status": "No Content",
+              "code": 204,
+              "_postman_previewlanguage": "text",
+              "header": [],
+              "body": ""
+            },
+            {
+              "name": "404 找不到",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/admin/reservations/99999",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin",
+                    "reservations",
+                    "99999"
+                  ]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": \"NOT_FOUND\"\n}"
+            },
+            {
+              "name": "401 未登入",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/admin/reservations/{{reservationId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin",
+                    "reservations",
+                    "{{reservationId}}"
+                  ]
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": \"UNAUTHORIZED\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "logout"
+              ]
+            },
+            "description": "登出，清除 `admin_session` cookie。"
+          },
+          "response": [
+            {
+              "name": "204 成功",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/admin/logout",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin",
+                    "logout"
+                  ]
+                }
+              },
+              "status": "No Content",
+              "code": 204,
+              "_postman_previewlanguage": "text",
+              "header": [],
+              "body": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
